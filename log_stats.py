@@ -3,40 +3,98 @@ class LogStats:
     Класс для анализа статистики логов поисковых запросов,
     сохранённых в MongoDB (через log_writer.collection).
     """
-    def __init__(self, log_writer):
+    def __init__(self, log_search):
         # Сохраняем коллекцию MongoDB из переданного log_writer
-        self.collection=log_writer.collection
+        self.collection = log_search.collection
 
     def get_popular(self, limit=5):
         """
         Получить топ популярных поисков на основе количества повторений.
-        Группировка по типу поиска и параметрам.
+        Группировка только по типу поиска.
         :param limit: по дефолту 5
         """
-        row=[
+        pipeline = [
             {
                 "$group": {
-                    "_id": {
-                        "type": "$search_type", # Группировка по типу запроса и по переданным параметрам
-                        "params": "$params"
-                    },
+                    "_id": "$search_type",  # Группировка только по типу поиска
                     "count": {"$sum": 1}
                 }
             },
-            {"$sort": {"count": -1}},   # Сортируем по убыванию
-            {"$limit": limit},   # Ограничение количества результатов
+            {"$sort": {"count": -1}},  # Сортируем по убыванию
+            {"$limit": limit},  # Ограничение количества результатов
             {
                 "$project": {
                     "_id": 0,
-                    "search_type": "$_id.type",  # Возвращаем тип поиска
+                    "search_type": "$_id",  # Возвращаем тип поиска
+                    "count": 1
+                }
+            }
+        ]
+        return list(self.collection.aggregate(pipeline))
+
+    def get_popular_genre(self, limit=5):
+        """
+        Получить топ популярных запросов по жанру и диапазону лет.
+        :param limit: количество результатов
+        """
+        pipeline = [
+            {"$match": {
+                "search_type": "by genre and years",
+                "parameters.genre": {"$exists": True},
+                "parameters.from": {"$exists": True},
+                "parameters.to": {"$exists": True}
+            }},
+            {"$group": {
+                "_id": {
+                    "genre": "$parameters.genre",
+                    "from": "$parameters.from",
+                    "to": "$parameters.to"
+                },
+                "count": {"$sum": 1}
+            }},
+            {"$sort": {"count": -1}},
+            {"$limit": limit},
+            {"$project": {
+                "_id": 0,
+                "genre": "$_id.genre",
+                "from": "$_id.from",
+                "to": "$_id.to",
+                "count": 1
+            }}
+        ]
+        return list(self.collection.aggregate(pipeline))
+
+    def get_latest(self, limit=5):
+        """
+        Получить последние уникальные поисковые запросы, отсортированные по времени (timestamp).
+        :param limit: по дефолту 5
+        """
+        pipeline = [
+            {"$sort": {"timestamp": -1}},  # Сортировка по убыванию времени
+            {
+                "$group": {
+                    "_id": {
+                        "search_type": "$search_type",
+                        "params": "$parameters"
+                    },
+                    "count": {"$first": "$result_count"},
+                    "timestamp": {"$first": "$timestamp"},
+                    "doc": {"$first": "$$ROOT"}
+                }
+            },
+            {"$sort": {"timestamp": -1}},
+            {"$limit": limit},
+            {
+                "$project": {
+                    "_id": 0,
+                    "search_type": "$doc.search_type",
                     "params": {
-                        # Преобразуем словарь параметров в строку через запятую
                         "$reduce": {
                             "input": {
                                 "$map": {
-                                    "input": {"$objectToArray": "$_id.params"},
+                                    "input": {"$objectToArray": "$doc.parameters"},
                                     "as": "p",
-                                    "in": {"$toString": "$$p.v"}  # Только значения, не ключи
+                                    "in": {"$toString": "$$p.v"}
                                 }
                             },
                             "initialValue": "",
@@ -49,47 +107,70 @@ class LogStats:
                             }
                         }
                     },
-                    "count": 1
+                    "count": "$doc.result_count"
                 }
             }
         ]
-        return list(self.collection.aggregate(row))
+        return list(self.collection.aggregate(pipeline))
 
+    # def get_popular_films_by_title(self, limit=5):
+    #     """Получить топ популярных фильмов по названию."""
+    #     pipeline = [
+    #         {"$match": {"search_type": "by title"}},
+    #         {"$group": {
+    #             "_id": "$parameters.title",
+    #             "count": {"$sum": 1}
+    #         }},
+    #         {"$sort": {"count": -1}},
+    #         {"$limit": limit},
+    #         {"$project": {
+    #             "_id": 0,
+    #             "title": "$_id",
+    #             "count": 1
+    #         }}
+    #     ]
+    #     return list(self.collection.aggregate(pipeline))
 
-    def get_latest(self,limit=5):
+    def get_popular_films_by_title(self, limit=5):
         """
-        Получить последние поисковые запросы, отсортированные по времени (timestamp).
-        :param limit: по дефолту 5
+        Получить топ популярных фильмов по названию.
         """
-        row=[
-            {"$sort": {"timestamp": -1}},   # Сортировка по убыванию времени Ограничиваем количество
-                    {"$limit": limit},
-                    {
-                        "$project": {
-                            "_id": 0,
-                            "search_type": 1,
-                            "params": {
-                                # Преобразуем параметры в строку
-                                "$reduce": {
-                                    "input": {
-                                        "$map": {
-                                            "input": {"$objectToArray": "$params"},
-                                            "as": "p",
-                                            "in": {"$toString": "$$p.v"}  # Только значения
-                                        }
-                                    },
-                                    "initialValue": "",
-                                    "in": {
-                                        "$cond": [
-                                            {"$eq": ["$$value", ""]},
-                                            "$$this",
-                                            {"$concat": ["$$value", ", ", "$$this"]}
-                                        ]
-                                    }
-                                }
-                            },
-                            "count": "$results_count" # Показываем, сколько результатов дал поиск
-                        }
-                    }
+        pipeline = [
+            {"$match": {"search_type": "by title"}},
+            {"$addFields": {
+                "normalized_title": {"$toLower": "$parameters.title"}
+            }},
+            {"$group": {
+                "_id": "$normalized_title",
+                "count": {"$sum": 1},
+                "original_title": {"$first": "$parameters.title"}
+            }},
+            {"$sort": {"count": -1}},
+            {"$limit": limit},
+            {"$project": {
+                "_id": 0,
+                "title": "$original_title",
+                "count": 1
+            }}
         ]
-        return list(self.collection.aggregate(row))
+        return list(self.collection.aggregate(pipeline))
+
+    def get_popular_actors(self, limit=5):
+        """Получить топ популярных актеров."""
+        pipeline = [
+            {"$match": {"search_type": "by actor"}},
+            {"$group": {
+                "_id": "$parameters.actor",
+                "count": {"$sum": 1}
+            }},
+            {"$sort": {"count": -1}},
+            {"$limit": limit},
+            {"$project": {
+                "_id": 0,
+                "actor_name": "$_id",
+                "count": 1
+            }}
+        ]
+        return list(self.collection.aggregate(pipeline))
+
+
