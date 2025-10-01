@@ -113,23 +113,6 @@ class LogStats:
         ]
         return list(self.collection.aggregate(pipeline))
 
-    # def get_popular_films_by_title(self, limit=5):
-    #     """Получить топ популярных фильмов по названию."""
-    #     pipeline = [
-    #         {"$match": {"search_type": "by title"}},
-    #         {"$group": {
-    #             "_id": "$parameters.title",
-    #             "count": {"$sum": 1}
-    #         }},
-    #         {"$sort": {"count": -1}},
-    #         {"$limit": limit},
-    #         {"$project": {
-    #             "_id": 0,
-    #             "title": "$_id",
-    #             "count": 1
-    #         }}
-    #     ]
-    #     return list(self.collection.aggregate(pipeline))
 
     def get_popular_films_by_title(self, limit=5):
         """

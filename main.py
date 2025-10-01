@@ -1,3 +1,5 @@
+from pymongo.errors import PyMongoError
+from pymysql.err import MySQLError, OperationalError, ProgrammingError, InternalError
 from db_connector import DBConnector
 from log_writer import LogSearch
 from formatter import GREEN, MAGENTA, RESET, BERUSA, RED
@@ -60,15 +62,24 @@ def main():
     while True:
         choice = main_menu()
         if choice == 1:
-            title = input("Enter film title: ")
-            all_results = db.search_by_title(title, limit=1000)
+            try:
+                title = input("Enter film title: ")
+                all_results = db.search_by_title(title, limit=1000)
+            except Exception as e:
+                print(f"{RED}Ошибка при поиске по названию: {e}{RESET}")
+                continue
+
             def description_func(entry):
                 return entry['title']
             print_paginated_results(all_results, description_func, limit=10)
             logger.log_search("by title", {"title": title}, len(all_results))
 
         elif choice == 2:
-            genres = db.get_all_genres()
+            try:
+                genres = db.get_all_genres()
+            except Exception as e:
+                print(f"{RED}Ошибка при получении списка жанров: {e}{RESET}")
+                continue
             print("Available genres:")
             for i, genre in enumerate(genres, 1):
                 print(f"{i}. {genre}")
@@ -108,7 +119,14 @@ def main():
             print(f"\n{MAGENTA}Top 5 popular searches by genre and years:{RESET}")
             print(f"{'#':<3} {'Genre':<15} | {'Years':<15} | {'Requests':<10}")
             print('-' * 45)
-            popular_genre_years = stats.get_popular_genre(limit=5)
+            popular_genre_years = []
+            try:
+                popular_genre_years = stats.get_popular_genre(limit=5)
+            except PyMongoError as e:
+                print(f"{RED}Ошибка MongoDB: {e}{RESET}")
+            except Exception as e:
+                print(f"{RED}Непредвиденная ошибка: {e}{RESET}")
+
             for i, entry in enumerate(popular_genre_years, 1):
                 genre = entry['genre'].capitalize()
                 year_range = f"{entry['from']}–{entry['to']}"
@@ -118,7 +136,14 @@ def main():
             print(f"\n{MAGENTA}Top 5 popular films by title:{RESET}")
             print(f"{'#':<3} {'Film Title':<30} | {'Requests':<10}")
             print('-' * 50)
-            popular_films_by_title = stats.get_popular_films_by_title(limit=5)
+            popular_films_by_title = []
+            try:
+                popular_films_by_title = stats.get_popular_films_by_title(limit=5)
+            except PyMongoError as e:
+                print(f"{RED}Ошибка MongoDB: {e}{RESET}")
+            except Exception as e:
+                print(f"{RED}Непредвиденная ошибка: {e}{RESET}")
+
             for i, entry in enumerate(popular_films_by_title, 1):
                 film_title = entry.get('title', 'Unknown').upper()
                 count = entry['count']
@@ -126,15 +151,29 @@ def main():
             print(f"\n{MAGENTA}Top 5 popular actors:{RESET}")
             print(f"{'#':<3} {'Actor':<25} | {'Requests':<10}")
             print('-' * 45)
-            popular_actors = stats.get_popular_actors(limit=5)
+            popular_actors = []
+            try:
+                popular_actors = stats.get_popular_actors(limit=5)
+            except PyMongoError as e:
+                print(f"{RED}Ошибка MongoDB: {e}{RESET}")
+            except Exception as e:
+                print(f"{RED}Непредвиденная ошибка: {e}{RESET}")
+
             for i, entry in enumerate(popular_actors, 1):
                 actor_name = entry.get('actor_name', 'Unknown').capitalize()
                 count = entry['count']
                 print(f"{i:<3} {actor_name:<25} | {count:<10}")
 
-            # Последние 5 запросов (простой список)
+            # Последние 5 запросов
             print(f"\n{MAGENTA}Latest 5 searches:{RESET}")
-            latest_searches = stats.get_latest(limit=5)
+            latest_searches = []
+            try:
+                latest_searches = stats.get_latest(limit=5)
+            except PyMongoError as e:
+                print(f"{RED}Ошибка MongoDB: {e}{RESET}")
+            except Exception as e:
+                print(f"{RED}Непредвиденная ошибка: {e}{RESET}")
+
             for i, entry in enumerate(latest_searches, 1):
                 search_type = get_search_description(entry['search_type'])
                 params = entry['params']
@@ -142,8 +181,22 @@ def main():
 
 
         elif choice == 4:
-            actor = input("Enter actor name: ")
-            all_results = db.search_by_actor(actor, limit=1000)
+            try:
+                actor = input("Enter actor name: ")
+                all_results = db.search_by_actor(actor, limit=1000)
+            except ProgrammingError as e:
+                print(f"{RED}Ошибка в SQL-запросе: {e}{RESET}")
+                continue
+            except OperationalError as e:
+                print(f"{RED}Ошибка подключения к базе данных: {e}{RESET}")
+                continue
+            except MySQLError as e:
+                print(f"{RED}Ошибка MySQL: {e}{RESET}")
+                continue
+            except Exception as e:
+                print(f"{RED}Непредвиденная ошибка: {e}{RESET}")
+                continue
+
             def description_func(entry):
                 return f"{entry['title']} ({entry['release_year']}) - {entry['actor_name']}"
             print_paginated_results(all_results, description_func, limit=10)
